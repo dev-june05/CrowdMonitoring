@@ -1,0 +1,26 @@
+# Virtual Environment
+venv/
+env/
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+
+# Outputs and Data
+outputs/
+data/
+*.jpg
+*.png
+*.mp4
+
+# Weights
+*.pt
+*.pth
+
+# Configs that change per user
+config/roi_config.json

@@ -1,0 +1,6 @@
+path: D:/Project/Datasets/NWPU-YOLO
+train: images/train
+val: images/val
+
+names:
+  0: person
