@@ -1,4 +1,4 @@
-path: D:/Project/Datasets/NWPU-YOLO
+path: C:/Users/Dell/Datasets/NWPU-YOLO
 train: images/train
 val: images/val
 

@@ -4,13 +4,13 @@ Extracts ground-contact positions (bottom-centre of bounding boxes) for use
 in spatial density estimation.  Bottom-centre is more spatially accurate than
 box centre for overhead / angled camera views.
 
-All data types (``FootPoint``, ``DetectionResult``) are imported from the
+All data types (``HeadPoint``, ``DetectionResult``) are imported from the
 shared ``src`` package so every module speaks the same language.
 
 Typical usage::
 
-    localizer = FootLocalizer(roi_mask=roi_manager.get_mask())
-    foot_points = localizer.extract(detection_result)
+    localizer = HeadLocalizer(roi_mask=roi_manager.get_mask())
+    head_points = localizer.extract(detection_result)
 """
 
 from __future__ import annotations
@@ -20,15 +20,15 @@ from typing import Optional
 
 import numpy as np
 
-from src import DetectionResult, FootPoint
+from src import DetectionResult, HeadPoint
 
 logger = logging.getLogger(__name__)
 
 
-class FootLocalizer:
+class HeadLocalizer:
     """Extract ground-contact positions from YOLO bounding-box detections.
 
-    The *foot point* is the bottom-centre of each bounding box — the
+    The *head point* is the bottom-centre of each bounding box — the
     approximate ground-contact position of a standing person.  An optional
     binary ROI mask can be supplied to filter out detections that fall
     outside the region of interest.
@@ -73,16 +73,16 @@ class FootLocalizer:
     # Extraction
     # ------------------------------------------------------------------
 
-    def extract(self, detection: DetectionResult) -> list[FootPoint]:
-        """Convert bounding-box detections into foot points.
+    def extract(self, detection: DetectionResult) -> list[HeadPoint]:
+        """Convert bounding-box detections into head points.
 
         For each box ``(x1, y1, x2, y2)``:
 
-        * ``foot_x = (x1 + x2) / 2``  — horizontal centre
-        * ``foot_y = y2``              — bottom edge (ground contact)
+        * ``head_x = (x1 + x2) / 2``  — horizontal centre
+        * ``head_y = y2``              — bottom edge (ground contact)
         * ``bbox_height = y2 - y1``
 
-        If a ROI mask has been set, only foot points whose pixel position
+        If a ROI mask has been set, only head points whose pixel position
         falls inside the mask (value > 0) are returned.
 
         Parameters
@@ -92,8 +92,8 @@ class FootLocalizer:
 
         Returns
         -------
-        list[FootPoint]
-            One foot point per (valid, in-ROI) detection.
+        list[HeadPoint]
+            One head point per (valid, in-ROI) detection.
         """
         if detection.count == 0:
             return []
@@ -102,18 +102,18 @@ class FootLocalizer:
 
         # Vectorised foot-point arithmetic
         x1, y1, x2, y2 = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
-        foot_x = (x1 + x2) / 2.0
-        foot_y = y2
+        head_x = (x1 + x2) / 2.0
+        head_y = (y1 + y2) / 2.0
         bbox_h = y2 - y1
 
         # Resolve track IDs — fall back to -1 when tracking is inactive
         has_tracks = detection.has_tracks
         track_ids = detection.track_ids if has_tracks else None
 
-        # Build FootPoint list, optionally filtering by ROI
-        points: list[FootPoint] = []
+        # Build HeadPoint list, optionally filtering by ROI
+        points: list[HeadPoint] = []
         for i in range(detection.count):
-            fx, fy = float(foot_x[i]), float(foot_y[i])
+            fx, fy = float(head_x[i]), float(head_y[i])
 
             # --- ROI filter ---
             if self._roi_mask is not None:
@@ -125,7 +125,7 @@ class FootLocalizer:
                     continue  # outside ROI — skip
 
             points.append(
-                FootPoint(
+                HeadPoint(
                     x=fx,
                     y=fy,
                     bbox_height=float(bbox_h[i]),
@@ -135,7 +135,7 @@ class FootLocalizer:
             )
 
         logger.debug(
-            "Extracted %d foot points from %d detections (ROI active: %s)",
+            "Extracted %d head points from %d detections (ROI active: %s)",
             len(points),
             detection.count,
             self._roi_mask is not None,
@@ -148,7 +148,7 @@ class FootLocalizer:
 
     @staticmethod
     def compute_foot_point(box: np.ndarray) -> tuple[float, float, float]:
-        """Compute the foot point for a single bounding box.
+        """Compute the head point for a single bounding box.
 
         Parameters
         ----------
@@ -158,20 +158,19 @@ class FootLocalizer:
         Returns
         -------
         tuple[float, float, float]
-            ``(foot_x, foot_y, bbox_height)``
+            ``(head_x, head_y, bbox_height)``
         """
-        x1, y1, x2, y2 = box[:4]
-        foot_x = float((x1 + x2) / 2.0)
-        foot_y = float(y2)
+        head_x = float((x1 + x2) / 2.0)
+        head_y = float((y1 + y2) / 2.0)
         bbox_height = float(y2 - y1)
-        return foot_x, foot_y, bbox_height
+        return head_x, head_y, bbox_height
 
 
 # ----------------------------------------------------------------------
 # Quick smoke test
 # ----------------------------------------------------------------------
 if __name__ == "__main__":
-    loc = FootLocalizer()
+    loc = HeadLocalizer()
 
     # Simulate a DetectionResult with two persons
     boxes = np.array(
@@ -204,11 +203,11 @@ if __name__ == "__main__":
 
     # ROI filtering
     mask = np.zeros((500, 500), dtype=np.uint8)
-    mask[350:450, 100:200] = 1  # small ROI around first foot point
+    mask[350:450, 100:200] = 1  # small ROI around first head point
     loc.set_roi_mask(mask)
     filtered = loc.extract(det)
     print(f"After ROI filter: {len(filtered)} / {det.count} points kept")
 
     # Static helper
-    fx, fy, bh = FootLocalizer.compute_foot_point(np.array([100, 200, 150, 400]))
+    fx, fy, bh = HeadLocalizer.compute_foot_point(np.array([100, 200, 150, 400]))
     print(f"Static helper: foot=({fx:.1f}, {fy:.1f}), h={bh:.1f}")

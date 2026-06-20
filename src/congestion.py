@@ -9,14 +9,14 @@ severity (WARNING / CRITICAL).
 """
 
 import numpy as np
-from src import FootPoint, CongestionAlert
+from src import HeadPoint, CongestionAlert
 
 
 class CongestionDetector:
     """Grid-based congestion detection with multi-level alerting.
 
     Overlays an NxM grid on the ROI polygon's bounding box, counts
-    foot points per cell, and generates alerts when density exceeds
+    head points per cell, and generates alerts when density exceeds
     configurable thresholds.
 
     Args:
@@ -58,7 +58,7 @@ class CongestionDetector:
         self.density_matrix = np.zeros((rows, cols), dtype=np.float32)
 
     def get_cell(self, x: float, y: float) -> tuple:
-        """Map a foot point to its grid cell (row, col)."""
+        """Map a head point to its grid cell (row, col)."""
         col = int((x - self.roi_x_min) / self.cell_w)
         row = int((y - self.roi_y_min) / self.cell_h)
         col = np.clip(col, 0, self.cols - 1)
@@ -73,11 +73,11 @@ class CongestionDetector:
         y2 = int(y1 + self.cell_h)
         return (x1, y1, x2, y2)
 
-    def analyze(self, foot_points: list) -> tuple:
-        """Analyze foot points and return density matrix + congestion alerts.
+    def analyze(self, head_points: list) -> tuple:
+        """Analyze head points and return density matrix + congestion alerts.
 
         Args:
-            foot_points: List of FootPoint objects (already ROI-filtered).
+            head_points: List of HeadPoint objects (already ROI-filtered).
 
         Returns:
             density_matrix: (rows, cols) array of per-cell counts.
@@ -85,8 +85,8 @@ class CongestionDetector:
         """
         self.density_matrix = np.zeros((self.rows, self.cols), dtype=np.float32)
 
-        # Count foot points per cell
-        for fp in foot_points:
+        # Count head points per cell
+        for fp in head_points:
             row, col = self.get_cell(fp.x, fp.y)
             self.density_matrix[row, col] += 1.0
 

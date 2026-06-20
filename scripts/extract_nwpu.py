@@ -30,6 +30,8 @@ def extract_dataset(source_dir, dest_dir):
     print("Dataset extraction complete.")
 
 if __name__ == "__main__":
-    src = r"D:\Project\Datasets\NWPU-Crowd\NWPU-Crowd"
-    dst = r"D:\Project\Datasets\NWPU-Crowd"
+    src = r"C:\Users\Dell\Datasets\NWPU-Crowd\NWPU-Crowd"
+    dst = r"C:\Users\Dell\Datasets\NWPU-Crowd"
+    
+    # We redefine the extract_dataset logic here just in case it was lost, but the function extract_dataset should be untouched above.
     extract_dataset(src, dst)

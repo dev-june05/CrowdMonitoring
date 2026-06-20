@@ -13,10 +13,10 @@ import time
 import numpy as np
 from pathlib import Path
 
-from src import PipelineConfig, FootPoint
+from src import PipelineConfig, HeadPoint
 from src.detector import PersonDetector
 from src.roi_manager import ROIManager
-from src.foot_localizer import FootLocalizer
+from src.head_localizer import HeadLocalizer
 from src.density_estimator import DensityEstimator
 from src.temporal_filter import TemporalFilter
 from src.congestion import CongestionDetector
@@ -61,7 +61,7 @@ class Pipeline:
         self.roi_mode = self.config.roi_mode  # "manual" or "auto"
 
         # Foot localizer (initialized after ROI is defined)
-        self.foot_localizer = FootLocalizer()
+        self.head_localizer = HeadLocalizer()
 
         # Density estimator (initialized after first frame for shape)
         self.density_estimator = None
@@ -159,7 +159,7 @@ class Pipeline:
                 return
 
         # Initialize dependent modules
-        self.foot_localizer.set_roi_mask(self._roi_mask)
+        self.head_localizer.set_roi_mask(self._roi_mask)
 
         self.density_estimator = DensityEstimator(
             frame_shape=(h, w),
@@ -215,7 +215,7 @@ class Pipeline:
                 print("No manual ROI defined. Define one with 'R' (redefine).")
 
         # Update dependent modules
-        self.foot_localizer.set_roi_mask(self._roi_mask)
+        self.head_localizer.set_roi_mask(self._roi_mask)
         if self._roi_polygon is not None:
             self.congestion_detector = CongestionDetector(
                 roi_polygon=self._roi_polygon,
@@ -233,7 +233,7 @@ class Pipeline:
             h, w = frame.shape[:2]
             self._roi_mask = self.roi_manager.generate_mask((h, w))
             self._roi_polygon = self.roi_manager.get_polygon()
-            self.foot_localizer.set_roi_mask(self._roi_mask)
+            self.head_localizer.set_roi_mask(self._roi_mask)
             self.congestion_detector = CongestionDetector(
                 roi_polygon=self._roi_polygon,
                 frame_shape=(h, w),
@@ -317,18 +317,18 @@ class Pipeline:
                 detection = self._last_detection  # reuse previous result
 
             # --- 2. Foot Point Extraction ---
-            foot_points = self.foot_localizer.extract(detection)
+            head_points = self.head_localizer.extract(detection)
 
             # --- 3. Auto-segmentation update (every N-th frame) ---
             if self.roi_mode == "auto" and self.ground_segmentor.is_available:
                 new_mask = self.ground_segmentor.segment(frame)
                 if new_mask is not self._roi_mask:
                     self._roi_mask = new_mask
-                    self.foot_localizer.set_roi_mask(self._roi_mask)
+                    self.head_localizer.set_roi_mask(self._roi_mask)
 
             # --- 4. Density Estimation ---
             heatmap = self.density_estimator.compute(
-                foot_points,
+                head_points,
                 roi_mask=self._roi_mask,
                 adaptive=self.config.use_adaptive_kde
             )
@@ -337,10 +337,10 @@ class Pipeline:
             smoothed_heatmap = self.temporal_filter.update(heatmap)
 
             # --- 6. Congestion Detection ---
-            density_matrix, alerts = self.congestion_detector.analyze(foot_points)
+            density_matrix, alerts = self.congestion_detector.analyze(head_points)
 
             # --- 7. Flow Analysis ---
-            flow_vectors, flow_metrics = self.flow_analyzer.update(foot_points)
+            flow_vectors, flow_metrics = self.flow_analyzer.update(head_points)
             anomalies = self.flow_analyzer.detect_anomalies(flow_vectors, flow_metrics)
 
             # --- 8. FPS Calculation ---
@@ -351,7 +351,7 @@ class Pipeline:
             # --- 9. Visualization ---
             display = self.visualizer.render(
                 frame=frame,
-                foot_points=foot_points,
+                head_points=head_points,
                 heatmap=smoothed_heatmap,
                 roi_polygon=self._roi_polygon,
                 roi_mask=self._roi_mask,

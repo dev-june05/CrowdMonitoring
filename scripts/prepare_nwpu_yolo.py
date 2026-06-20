@@ -89,6 +89,6 @@ def process_nwpu_to_yolo(source_dir, output_dir, box_size=30):
     print(f"\nYOLO dataset successfully created at {output_dir}")
 
 if __name__ == "__main__":
-    src = r"D:\Project\Datasets\NWPU-Crowd"
-    dst = r"D:\Project\Datasets\NWPU-YOLO"
+    src = r"C:\Users\Dell\Datasets\NWPU-Crowd"
+    dst = r"C:\Users\Dell\Datasets\NWPU-YOLO"
     process_nwpu_to_yolo(src, dst)

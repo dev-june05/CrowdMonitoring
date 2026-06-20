@@ -16,7 +16,7 @@ Anomaly indicators:
 import numpy as np
 from collections import defaultdict
 
-from src import FootPoint, FlowVector, FlowMetrics
+from src import HeadPoint, FlowVector, FlowMetrics
 
 
 class FlowAnalyzer:
@@ -45,11 +45,11 @@ class FlowAnalyzer:
         self.position_history = defaultdict(list)
         self.max_history = 30  # Max frames to keep per track
 
-    def update(self, foot_points: list) -> tuple:
-        """Update with new foot points and compute flow vectors.
+    def update(self, head_points: list) -> tuple:
+        """Update with new head points and compute flow vectors.
 
         Args:
-            foot_points: List of FootPoint objects with track_ids.
+            head_points: List of HeadPoint objects with track_ids.
 
         Returns:
             flow_vectors: List of FlowVector (per-person velocity).
@@ -58,7 +58,7 @@ class FlowAnalyzer:
         current_ids = set()
         flow_vectors = []
 
-        for fp in foot_points:
+        for fp in head_points:
             if fp.track_id < 0:
                 continue  # Skip untracked detections
 

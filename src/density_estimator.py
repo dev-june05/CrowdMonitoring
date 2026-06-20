@@ -20,7 +20,7 @@ import numpy as np
 import cv2
 from scipy.ndimage import gaussian_filter
 
-from src import FootPoint
+from src import HeadPoint
 
 
 class DensityEstimator:
@@ -47,7 +47,7 @@ class DensityEstimator:
         self.small_h = max(1, self.h // scale_factor)
         self.small_w = max(1, self.w // scale_factor)
 
-    def compute_fixed(self, foot_points: list, roi_mask: np.ndarray = None) -> np.ndarray:
+    def compute_fixed(self, head_points: list, roi_mask: np.ndarray = None) -> np.ndarray:
         """Fast fixed-sigma KDE using bin-and-blur at quarter resolution.
 
         Mathematically equivalent to KDE because convolving a sum of delta
@@ -55,7 +55,7 @@ class DensityEstimator:
         Runs in ~2-5ms at quarter resolution.
 
         Args:
-            foot_points: List of FootPoint objects.
+            head_points: List of HeadPoint objects.
             roi_mask: Optional binary mask (uint8, 0 or 1).
 
         Returns:
@@ -64,7 +64,7 @@ class DensityEstimator:
         # 1. Create sparse point map at reduced resolution
         density = np.zeros((self.small_h, self.small_w), dtype=np.float32)
 
-        for fp in foot_points:
+        for fp in head_points:
             sy = int(fp.y / self.scale)
             sx = int(fp.x / self.scale)
             sy = np.clip(sy, 0, self.small_h - 1)
@@ -88,7 +88,7 @@ class DensityEstimator:
 
         return heatmap
 
-    def compute_adaptive(self, foot_points: list, roi_mask: np.ndarray = None) -> np.ndarray:
+    def compute_adaptive(self, head_points: list, roi_mask: np.ndarray = None) -> np.ndarray:
         """Perspective-aware adaptive-sigma KDE.
 
         Each person's kernel sigma = gamma * bbox_height.
@@ -99,7 +99,7 @@ class DensityEstimator:
         Runs in ~5-15ms at quarter resolution for N<100 detections.
 
         Args:
-            foot_points: List of FootPoint objects with bbox_height set.
+            head_points: List of HeadPoint objects with bbox_height set.
             roi_mask: Optional binary mask (uint8, 0 or 1).
 
         Returns:
@@ -107,7 +107,7 @@ class DensityEstimator:
         """
         density = np.zeros((self.small_h, self.small_w), dtype=np.float32)
 
-        for fp in foot_points:
+        for fp in head_points:
             # Perspective-aware sigma: scale with bbox height
             sigma_full = max(self.gamma * fp.bbox_height, 2.0)
             sigma_small = sigma_full / self.scale
@@ -151,12 +151,12 @@ class DensityEstimator:
 
         return heatmap
 
-    def compute(self, foot_points: list, roi_mask: np.ndarray = None,
+    def compute(self, head_points: list, roi_mask: np.ndarray = None,
                 adaptive: bool = True) -> np.ndarray:
         """Unified interface — dispatches to fixed or adaptive KDE.
 
         Args:
-            foot_points: List of FootPoint objects.
+            head_points: List of HeadPoint objects.
             roi_mask: Optional binary mask.
             adaptive: If True, use perspective-aware adaptive-sigma KDE.
 
@@ -164,5 +164,5 @@ class DensityEstimator:
             Density heatmap at full resolution, float32.
         """
         if adaptive:
-            return self.compute_adaptive(foot_points, roi_mask)
-        return self.compute_fixed(foot_points, roi_mask)
+            return self.compute_adaptive(head_points, roi_mask)
+        return self.compute_fixed(head_points, roi_mask)

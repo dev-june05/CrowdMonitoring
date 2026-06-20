@@ -1,20 +1,20 @@
 """Unified Rendering Engine for Crowd Monitoring.
 
 Handles compositing of all visual overlays onto video frames:
-ROI polygon, foot points, heatmap, grid, congestion alerts,
+ROI polygon, head points, heatmap, grid, congestion alerts,
 velocity arrows, stats panel, anomaly banners, and keyboard legend.
 """
 
 import cv2
 import numpy as np
 import time
-from src import FootPoint, CongestionAlert, FlowVector, FlowMetrics, PipelineConfig
+from src import HeadPoint, CongestionAlert, FlowVector, FlowMetrics, PipelineConfig
 
 
 class Visualizer:
     """Unified rendering engine for all visual overlays.
 
-    Handles: ROI polygon, foot points, heatmap overlay, grid lines,
+    Handles: ROI polygon, head points, heatmap overlay, grid lines,
     congestion alerts, velocity arrows, stats panel, and keyboard controls.
 
     Each overlay can be toggled at runtime via keyboard shortcuts.
@@ -35,7 +35,7 @@ class Visualizer:
         # Toggle states – initialised from config, modified by keyboard at runtime
         self.show_heatmap: bool = config.show_heatmap
         self.show_grid: bool = config.show_grid
-        self.show_foot_points: bool = config.show_foot_points
+        self.show_head_points: bool = config.show_head_points
         self.show_roi: bool = config.show_roi
         self.show_velocity: bool = config.show_velocity
         self.show_stats: bool = config.show_stats
@@ -47,7 +47,7 @@ class Visualizer:
     def render(
         self,
         frame: np.ndarray,
-        foot_points: list[FootPoint] | None = None,
+        head_points: list[HeadPoint] | None = None,
         heatmap: np.ndarray | None = None,
         roi_polygon: np.ndarray | None = None,
         roi_mask: np.ndarray | None = None,
@@ -63,12 +63,12 @@ class Visualizer:
         """Render all enabled overlays onto *frame*.
 
         Layers are composited in a fixed z-order (bottom → top):
-        heatmap → ROI → grid → foot points → congestion →
+        heatmap → ROI → grid → head points → congestion →
         velocity → stats → anomalies → keyboard legend.
 
         Args:
             frame:              Raw BGR video frame.
-            foot_points:        Detected/tracked foot locations.
+            head_points:        Detected/tracked foot locations.
             heatmap:            2-D float density heatmap (same size as frame).
             roi_polygon:        Nx2 array of ROI polygon vertices.
             roi_mask:           Binary mask (0/1 float) for the ROI region.
@@ -99,8 +99,8 @@ class Visualizer:
             self._draw_grid(display, roi_polygon, density_matrix.shape)
 
         # 4. Foot-point markers
-        if self.show_foot_points and foot_points:
-            self._draw_foot_points(display, foot_points)
+        if self.show_head_points and head_points:
+            self._draw_head_points(display, head_points)
 
         # 5. Congestion alert rectangles (always shown when present)
         if congestion_alerts:
@@ -164,7 +164,7 @@ class Visualizer:
         elif action == "toggle_grid":
             self.show_grid = not self.show_grid
         elif action == "toggle_feet":
-            self.show_foot_points = not self.show_foot_points
+            self.show_head_points = not self.show_head_points
         elif action == "toggle_velocity":
             self.show_velocity = not self.show_velocity
         elif action == "toggle_roi":
@@ -239,9 +239,9 @@ class Visualizer:
             y = int(y_min + r * cell_h)
             cv2.line(frame, (x_min, y), (x_max, y), grid_color, 1)
 
-    def _draw_foot_points(self, frame: np.ndarray, foot_points: list[FootPoint]) -> None:
-        """Draw a colour-coded circle at each foot point location."""
-        for fp in foot_points:
+    def _draw_head_points(self, frame: np.ndarray, head_points: list[HeadPoint]) -> None:
+        """Draw a colour-coded circle at each head point location."""
+        for fp in head_points:
             center = (int(fp.x), int(fp.y))
 
             if fp.track_id >= 0:

@@ -28,7 +28,7 @@ class DetectionResult:
 
 
 @dataclass
-class FootPoint:
+class HeadPoint:
     """A person's estimated ground-contact position."""
     x: float                   # foot x position (image coords)
     y: float                   # foot y position (image coords)
@@ -124,7 +124,7 @@ class PipelineConfig:
     heatmap_opacity: float = 0.4
     show_heatmap: bool = True
     show_grid: bool = False
-    show_foot_points: bool = True
+    show_head_points: bool = True
     show_roi: bool = True
     show_velocity: bool = False
     show_stats: bool = True
