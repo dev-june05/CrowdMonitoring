@@ -59,16 +59,16 @@ Keyboard Controls (during runtime):
         help="Capture/display height (default: 720). Lower = faster."
     )
     parser.add_argument(
-        "--yolo-imgsz", type=int, default=640,
-        help="YOLO inference image size (default: 640). Try 320 for faster inference."
+        "--yolo-imgsz", type=int, default=1280,
+        help="YOLO inference image size (default: 1280). Try 640 for faster inference."
     )
     parser.add_argument(
         "--skip-frames", type=int, default=0, metavar="N",
         help="Run detection only every N+1 frames (0=every frame). Use 1 or 2 to boost FPS."
     )
     parser.add_argument(
-        "--model", type=str, default="models/yolov8n.pt",
-        help="Path to YOLO model weights (default: models/yolov8n.pt)"
+        "--model", type=str, default="yolo26n.pt",
+        help="Path to YOLO model weights (default: yolo26n.pt)"
     )
     parser.add_argument(
         "--device", type=int, default=0,
@@ -81,8 +81,8 @@ Keyboard Controls (during runtime):
         help="Path to ROI config JSON file (default: config/roi_config.json)"
     )
     parser.add_argument(
-        "--roi-mode", type=str, default="manual", choices=["manual", "auto"],
-        help="ROI mode: 'manual' (polygon) or 'auto' (BiSeNetV2 segmentation)"
+        "--roi-mode", type=str, default="manual", choices=["manual", "auto", "full"],
+        help="ROI mode: 'manual' (polygon), 'auto' (disabled), or 'full' (whole frame)"
     )
     parser.add_argument(
         "--redefine-roi", action="store_true",
@@ -147,18 +147,24 @@ Keyboard Controls (during runtime):
         help="Show velocity arrows by default"
     )
 
-    # Auto segmentation
+    # Homography / Physical Density
     parser.add_argument(
-        "--seg-config", type=str, default="",
-        help="Path to BiSeNetV2 config file (for auto ROI mode)"
+        "--perspective", type=str, choices=["proxy", "homography"], default="proxy",
+        help="Perspective mode (default: proxy)"
     )
     parser.add_argument(
-        "--seg-checkpoint", type=str, default="",
-        help="Path to BiSeNetV2 checkpoint file (for auto ROI mode)"
+        "--homography-file", type=str, default="config/homography.npy",
+        help="Path to saved homography matrix"
     )
     parser.add_argument(
-        "--seg-interval", type=int, default=30,
-        help="Run segmentation every N frames (default: 30)"
+        "--calibrate", action="store_true",
+        help="Run calibration wizard before starting pipeline"
+    )
+
+    # Context Risk
+    parser.add_argument(
+        "--place", type=str, default="",
+        help="Place type for uncalibrated risk limits (school, mall, stadium, etc.)"
     )
 
     # Output
@@ -167,8 +173,8 @@ Keyboard Controls (during runtime):
         help="Directory for screenshots and recordings (default: outputs)"
     )
     parser.add_argument(
-        "--record", action="store_true",
-        help="Record output video"
+        "--record-alerts", action="store_true",
+        help="Automatically record video clips when CRITICAL risk is sustained"
     )
 
     return parser.parse_args()
@@ -212,15 +218,15 @@ def main():
         heatmap_opacity=args.heatmap_opacity,
         show_heatmap=not args.no_heatmap,
         show_grid=args.show_grid,
-        show_foot_points=True,
+        show_head_points=True,
         show_roi=True,
         show_velocity=args.show_velocity,
         show_stats=True,
-        seg_model_config=args.seg_config,
-        seg_model_checkpoint=args.seg_checkpoint,
-        seg_run_interval=args.seg_interval,
+        perspective_mode=args.perspective,
+        homography_file=args.homography_file,
+        place_type=args.place,
         output_dir=args.output_dir,
-        record=args.record,
+        record_alerts=args.record_alerts,
     )
 
     print("=" * 60)
@@ -238,6 +244,24 @@ def main():
     print(f"  Thresholds: WARN={config.warning_threshold} CRIT={config.critical_threshold}")
     print("=" * 60)
     print()
+
+    # Optional calibration wizard
+    if args.calibrate:
+        print("Launching Calibration Wizard...")
+        import cv2
+        from src import calibration
+        cap = cv2.VideoCapture(resolved_source)
+        if isinstance(resolved_source, int):
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
+        ret, frame = cap.read()
+        if ret:
+            if calibration.run_calibration(frame, args.homography_file):
+                print("Calibration saved successfully.")
+            else:
+                print("Calibration cancelled.")
+        cap.release()
+        print("Starting pipeline...")
 
     # Create and run pipeline
     pipeline = Pipeline(config)

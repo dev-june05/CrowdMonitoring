@@ -22,7 +22,11 @@ from src.temporal_filter import TemporalFilter
 from src.congestion import CongestionDetector
 from src.flow_analyzer import FlowAnalyzer
 from src.visualizer import Visualizer
-from src.ground_segmentor import GroundSegmentor
+from src import calibration
+from src import crowd_clustering
+from src import context_risk
+from src.alert_manager import AlertManager
+from src.csv_logger import CSVLogger
 
 
 class Pipeline:
@@ -50,15 +54,30 @@ class Pipeline:
         # ROI manager (manual polygon)
         self.roi_manager = ROIManager(config_path=self.config.roi_config_path)
 
-        # Ground segmentor (BiSeNetV2, optional)
-        self.ground_segmentor = GroundSegmentor(
-            config_path=self.config.seg_model_config,
-            checkpoint_path=self.config.seg_model_checkpoint,
-            run_interval=self.config.seg_run_interval
-        )
+        # Homography calibration
+        self.is_calibrated = False
+        if self.config.perspective_mode == "homography":
+            H = calibration.load_homography(self.config.homography_file)
+            self.is_calibrated = H is not None
+            if self.is_calibrated:
+                print("Homography loaded successfully.")
+            else:
+                print("Warning: Homography missing. Falling back to proxy perspective.")
+                
+        # Context Risk
+        if self.config.place_type:
+            context_risk.set_place(self.config.place_type)
 
-        # Current ROI mode
-        self.roi_mode = self.config.roi_mode  # "manual" or "auto"
+        # Alerts & Logging
+        self.alert_manager = AlertManager(
+            output_dir=self.config.output_dir,
+            sustain_frames=self.config.alert_sustain_frames,
+            record=self.config.record_alerts
+        )
+        self.csv_logger = CSVLogger(filepath=self.config.log_csv)
+
+        # Current ROI mode (auto disabled for latency)
+        self.roi_mode = "manual"
 
         # Foot localizer (initialized after ROI is defined)
         self.head_localizer = HeadLocalizer()
@@ -146,19 +165,23 @@ class Pipeline:
                     [0, 0], [w, 0], [w, h], [0, h]
                 ], dtype=np.int32)
 
+        elif self.roi_mode == "full":
+            self._roi_mask = np.ones((h, w), dtype=np.uint8)
+            self._roi_polygon = np.array([
+                [0, 0], [w, 0], [w, h], [0, h]
+            ], dtype=np.int32)
+            
         elif self.roi_mode == "auto":
-            if self.ground_segmentor.is_available:
-                print("Running initial segmentation...")
-                self._roi_mask = self.ground_segmentor.segment(first_frame, force=True)
-                # Create convex hull polygon from mask contours
-                self._roi_polygon = self._mask_to_polygon(self._roi_mask)
-            else:
-                print("Auto-segmentation unavailable. Falling back to manual ROI.")
-                self.roi_mode = "manual"
-                self._setup_roi(first_frame)
-                return
+            print("Auto-segmentation disabled for low-latency mode. Falling back to manual ROI.")
+            self.roi_mode = "manual"
+            self._setup_roi(first_frame)
+            return
 
         # Initialize dependent modules
+        if self.is_calibrated:
+            calibration.precompute_cell_areas(
+                self._frame_shape, self.config.grid_rows, self.config.grid_cols
+            )
         self.head_localizer.set_roi_mask(self._roi_mask)
 
         self.density_estimator = DensityEstimator(
@@ -196,23 +219,7 @@ class Pipeline:
 
     def _switch_roi_mode(self, frame: np.ndarray):
         """Toggle between manual and auto ROI modes."""
-        if self.roi_mode == "manual":
-            if self.ground_segmentor.is_available:
-                self.roi_mode = "auto"
-                self._roi_mask = self.ground_segmentor.segment(frame, force=True)
-                self._roi_polygon = self._mask_to_polygon(self._roi_mask)
-                print("Switched to AUTO (BiSeNetV2) ROI mode")
-            else:
-                print("Auto-segmentation not available. Staying in manual mode.")
-        else:
-            self.roi_mode = "manual"
-            if self.roi_manager.is_defined:
-                h, w = frame.shape[:2]
-                self._roi_mask = self.roi_manager.generate_mask((h, w))
-                self._roi_polygon = self.roi_manager.get_polygon()
-                print("Switched to MANUAL ROI mode")
-            else:
-                print("No manual ROI defined. Define one with 'R' (redefine).")
+        print("Auto ROI mode disabled for performance. Only manual mode is supported.")
 
         # Update dependent modules
         self.head_localizer.set_roi_mask(self._roi_mask)
@@ -316,17 +323,15 @@ class Pipeline:
             else:
                 detection = self._last_detection  # reuse previous result
 
-            # --- 2. Foot Point Extraction ---
-            head_points = self.head_localizer.extract(detection)
+            # --- 2. Foot Point Extraction & World Projection ---
+            world_detections = self.head_localizer.extract_with_world(
+                detection, is_calibrated=self.is_calibrated
+            )
+            head_points = [wd.head for wd in world_detections]
+            
+            # --- 3. (Auto-segmentation removed for latency) ---
 
-            # --- 3. Auto-segmentation update (every N-th frame) ---
-            if self.roi_mode == "auto" and self.ground_segmentor.is_available:
-                new_mask = self.ground_segmentor.segment(frame)
-                if new_mask is not self._roi_mask:
-                    self._roi_mask = new_mask
-                    self.head_localizer.set_roi_mask(self._roi_mask)
-
-            # --- 4. Density Estimation ---
+            # --- 4. Density Estimation (KDE fallback/visuals) ---
             heatmap = self.density_estimator.compute(
                 head_points,
                 roi_mask=self._roi_mask,
@@ -343,12 +348,45 @@ class Pipeline:
             flow_vectors, flow_metrics = self.flow_analyzer.update(head_points)
             anomalies = self.flow_analyzer.detect_anomalies(flow_vectors, flow_metrics)
 
-            # --- 8. FPS Calculation ---
+            # --- 8. Crowd Clustering & Physical Density ---
+            world_coords = np.array([[wd.wx, wd.wy] for wd in world_detections]) if self.is_calibrated else None
+            pixel_coords = np.array([[wd.head.x, wd.head.y] for wd in world_detections])
+            
+            footprint = crowd_clustering.compute_crowd_footprint(
+                head_points=head_points,
+                world_coords=world_coords,
+                pixel_coords=pixel_coords,
+                eps=self.config.dbscan_eps,
+                min_samples=self.config.dbscan_min_samples,
+                alpha=self.config.alpha_shape_param,
+                world_to_px_fn=calibration.world_to_px if self.is_calibrated else None
+            )
+
+            # --- 9. Context Risk Assessment ---
+            risk_level = context_risk.get_context_risk(
+                person_count=len(head_points),
+                physical_density=footprint.physical_density,
+                is_calibrated=self.is_calibrated
+            )
+
+            # --- 10. FPS Calculation ---
             current_time = time.time()
             fps = 0.9 * fps + 0.1 * (1.0 / max(current_time - prev_time, 1e-6))
             prev_time = current_time
 
-            # --- 9. Visualization ---
+            # --- 11. Alerts & Logging ---
+            is_alerting = self.alert_manager.update(risk_level, frame)
+            self.csv_logger.log_frame(
+                frame_idx=frame_idx,
+                person_count=len(head_points),
+                density_per_m2=footprint.physical_density,
+                hull_area_m2=footprint.total_area_m2,
+                risk=risk_level,
+                fps=fps,
+                calibrated=self.is_calibrated
+            )
+
+            # --- 12. Visualization ---
             display = self.visualizer.render(
                 frame=frame,
                 head_points=head_points,
@@ -362,7 +400,10 @@ class Pipeline:
                 anomalies=anomalies,
                 fps=fps,
                 person_count=detection.count,
-                roi_mode=self.roi_mode
+                roi_mode=self.roi_mode,
+                footprint=footprint,
+                risk_level=risk_level,
+                is_alerting=is_alerting
             )
 
             # --- 10. Display ---
@@ -385,5 +426,6 @@ class Pipeline:
 
         # Cleanup
         cap.release()
+        self.alert_manager.release()
         cv2.destroyAllWindows()
         print("Pipeline stopped.")

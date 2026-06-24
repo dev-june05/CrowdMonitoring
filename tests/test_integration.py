@@ -7,7 +7,7 @@ sys.path.insert(0, '.')
 
 from src import PipelineConfig
 from src.detector import PersonDetector
-from src.foot_localizer import FootLocalizer
+from src.head_localizer import HeadLocalizer
 from src.roi_manager import ROIManager
 from src.density_estimator import DensityEstimator
 from src.temporal_filter import TemporalFilter
@@ -33,24 +33,24 @@ detector = PersonDetector("models/yolov8n.pt", device=0, conf=0.25)
 result = detector.detect_no_track(frame)
 print(f"   Detected: {result.count} people")
 
-# 2. Foot localization (no ROI filter for this test)
-print("\n2. Foot Localization...")
-localizer = FootLocalizer()
-foot_points = localizer.extract(result)
-print(f"   Foot points: {len(foot_points)}")
-if foot_points:
-    fp = foot_points[0]
-    print(f"   First: ({fp.x:.1f}, {fp.y:.1f}), bbox_h={fp.bbox_height:.1f}")
+# 2. Head localization (no ROI filter for this test)
+print("\n2. Head Localization...")
+localizer = HeadLocalizer()
+head_points = localizer.extract(result)
+print(f"   Head points: {len(head_points)}")
+if head_points:
+    hp = head_points[0]
+    print(f"   First: ({hp.x:.1f}, {hp.y:.1f}), bbox_h={hp.bbox_height:.1f}")
 
 # 3. Density estimation (adaptive KDE)
 print("\n3. Density Estimation (adaptive KDE)...")
 density_est = DensityEstimator((h, w), gamma=0.3, fixed_sigma=20.0)
-heatmap = density_est.compute_adaptive(foot_points)
+heatmap = density_est.compute(head_points, adaptive=True)
 print(f"   Heatmap shape: {heatmap.shape}, max={heatmap.max():.4f}")
 
 # 4. Fixed KDE comparison
 print("\n4. Density Estimation (fixed KDE)...")
-heatmap_fixed = density_est.compute_fixed(foot_points)
+heatmap_fixed = density_est.compute(head_points, adaptive=False)
 print(f"   Heatmap shape: {heatmap_fixed.shape}, max={heatmap_fixed.max():.4f}")
 
 # 5. Temporal filter
@@ -64,7 +64,7 @@ print("\n6. Congestion Detection...")
 roi_poly = np.array([[0, 0], [w, 0], [w, h], [0, h]], dtype=np.int32)
 congestion = CongestionDetector(roi_poly, (h, w), rows=8, cols=8,
                                  warning_threshold=2, critical_threshold=4)
-density_matrix, alerts = congestion.analyze(foot_points)
+density_matrix, alerts = congestion.analyze(head_points)
 print(f"   Grid: {density_matrix.shape}, max cell: {density_matrix.max():.0f}")
 print(f"   Alerts: {len(alerts)} ({sum(1 for a in alerts if a.severity == 'WARNING')} WARNING, "
       f"{sum(1 for a in alerts if a.severity == 'CRITICAL')} CRITICAL)")
@@ -72,7 +72,7 @@ print(f"   Alerts: {len(alerts)} ({sum(1 for a in alerts if a.severity == 'WARNI
 # 7. Flow analysis (single frame = no velocity)
 print("\n7. Flow Analysis...")
 flow = FlowAnalyzer()
-vectors, metrics = flow.update(foot_points)
+vectors, metrics = flow.update(head_points)
 print(f"   Tracked: {metrics.num_tracked}")
 
 # 8. Visualization
@@ -81,7 +81,7 @@ config = PipelineConfig()
 viz = Visualizer(config)
 display = viz.render(
     frame=frame,
-    foot_points=foot_points,
+    head_points=head_points,
     heatmap=smoothed,
     roi_polygon=roi_poly,
     roi_mask=np.ones((h, w), dtype=np.uint8),

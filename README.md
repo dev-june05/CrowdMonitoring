@@ -4,42 +4,40 @@ An advanced spatial crowd understanding system that uses computer vision to trac
 
 ## Features
 - **Person Tracking**: YOLOv8 + ByteTrack
-- **Perspective-Aware KDE**: Computes crowd density heatmaps using bounding box height as a perspective proxy.
-- **Congestion Alerting**: Grid-based multi-level (WARNING/CRITICAL) density alerts.
+- **Perspective Projection**: Converts pixel coordinates to real-world floor meters using Ground-Plane Homography.
+- **Physical Density Calculation**: Groups people using DBSCAN and calculates precise footprint areas (people/m²) using Alpha Shapes.
+- **Dynamic Context Risk**: Evaluates crowd safety thresholds based on physical density (Polus LOS standards) or falls back to place-specific count limits.
+- **Alerting & Audit**: Auto-records video clips of sustained critical risk events and logs per-frame statistics to CSV.
 - **Flow Analysis**: Velocity vectors, counter-flow detection, and motion entropy analysis.
-- **Auto-Segmentation**: BiSeNetV2 walkable area detection.
 
 ## Setup
 ```bash
 python -m venv venv
 .\venv\Scripts\activate
 pip install -r requirements.txt
-pip install mmengine "mmcv>=2.0.0" mmsegmentation  # For auto-segmentation
 ```
 
 ## Running the Pipeline
 ```bash
-# Webcam (Default is camera 0)
-python main.py --camera 0
+# 1. Run Calibration Wizard (One-time setup per camera view)
+python main.py --camera 0 --calibrate --perspective homography
 
-# Select specific webcam and reduce resolution for better FPS
-python main.py --camera 0 --width 640 --height 480 --yolo-imgsz 320 --skip-frames 1
+# 2. Run Live Monitoring (with auto video clip recording on critical risk)
+python main.py --camera 0 --perspective homography --record-alerts
 
-# Video File
-python main.py --source path/to/video.mp4
+# 3. Test on Video File (e.g. testing context risk fallback for a school)
+python main.py --source path/to/video.mp4 --perspective proxy --place school
 
 # Advanced settings
-python main.py --source video.mp4 --grid 12 12 --warn-threshold 3 --roi-mode auto
+python main.py --source video.mp4 --grid 12 12 --warn-threshold 3
 ```
 
 ### Keyboard Controls
 - `H` : Toggle Heatmap
 - `G` : Toggle Grid
-- `F` : Toggle Foot Points
+- `F` : Toggle Foot/Head Points
 - `V` : Toggle Velocity Arrows
-- `M` : Switch ROI Mode (Manual ↔ Auto)
-- `r` : Toggle ROI Visibility
-- `R` : Redefine Manual ROI
+- `R` : Define/Redefine ROI (Interactive Polygon Tool)
 - `D` : Toggle Stats Panel
 - `S` : Save Screenshot
 - `Q` : Quit

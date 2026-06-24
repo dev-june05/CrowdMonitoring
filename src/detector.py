@@ -82,7 +82,6 @@ class PersonDetector:
             frame,
             persist=True,                   # keep tracker state between frames
             tracker="bytetrack.yaml",        # use ByteTrack config shipped with Ultralytics
-            classes=[self._PERSON_CLASS_ID], # only detect persons
             conf=self.conf,
             imgsz=self.imgsz,
             device=self.device,
@@ -106,9 +105,8 @@ class PersonDetector:
             Detection boxes and confidences; ``track_ids`` will be an empty
             array.
         """
-        results = self.model(
+        results = self.model.predict(
             frame,
-            classes=[self._PERSON_CLASS_ID],
             conf=self.conf,
             imgsz=self.imgsz,
             device=self.device,

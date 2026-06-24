@@ -36,6 +36,13 @@ class HeadPoint:
     track_id: int = -1         # ByteTrack ID (-1 if untracked)
     confidence: float = 1.0    # detection confidence
 
+@dataclass
+class WorldDetection:
+    """A detection with both pixel and world-space coordinates."""
+    head: HeadPoint
+    wx: float = 0.0            # world X in metres
+    wy: float = 0.0            # world Y in metres
+
 
 @dataclass
 class CongestionAlert:
@@ -96,6 +103,17 @@ class PipelineConfig:
     roi_mode: str = "manual"              # "manual" or "auto"
     redefine_roi: bool = False
 
+    # Homography / Perspective
+    perspective_mode: str = "proxy"       # "proxy" (bbox height) or "homography"
+    homography_file: str = "config/homography.npy"
+    world_grid_w: float = 10.0            # metres — floor width
+    world_grid_h: float = 8.0             # metres — floor depth
+
+    # DBSCAN clustering
+    dbscan_eps: float = 1.5               # metres (clustering radius)
+    dbscan_min_samples: int = 2
+    alpha_shape_param: float = 0.7
+
     # Detection
     confidence_threshold: float = 0.25
     person_class_id: int = 0
@@ -129,11 +147,11 @@ class PipelineConfig:
     show_velocity: bool = False
     show_stats: bool = True
 
-    # Auto segmentation (BiSeNetV2)
-    seg_model_config: str = ""
-    seg_model_checkpoint: str = ""
-    seg_run_interval: int = 30            # run every N-th frame
-
-    # Output
+    # Output & Logging
     output_dir: str = "outputs"
-    record: bool = False
+    record_alerts: bool = False           # Automatically record clip on alert
+    log_csv: str = "outputs/crowd_log.csv"
+    
+    # Context Risk
+    place_type: str = ""                  # empty = use numeric thresholds
+    alert_sustain_frames: int = 10        # Frames before alert fires

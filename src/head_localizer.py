@@ -20,7 +20,7 @@ from typing import Optional
 
 import numpy as np
 
-from src import DetectionResult, HeadPoint
+from src import DetectionResult, HeadPoint, WorldDetection
 
 logger = logging.getLogger(__name__)
 
@@ -100,10 +100,10 @@ class HeadLocalizer:
 
         boxes = detection.boxes  # (N, 4)
 
-        # Vectorised foot-point arithmetic
+        # Vectorised head-point arithmetic (top-center of bounding box)
         x1, y1, x2, y2 = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
         head_x = (x1 + x2) / 2.0
-        head_y = (y1 + y2) / 2.0
+        head_y = y1
         bbox_h = y2 - y1
 
         # Resolve track IDs — fall back to -1 when tracking is inactive
@@ -142,12 +142,39 @@ class HeadLocalizer:
         )
         return points
 
+    def extract_with_world(self, detection: DetectionResult, is_calibrated: bool = False) -> list[WorldDetection]:
+        """
+        Extract head positions and project them to world coordinates if calibrated.
+        """
+        head_points = self.extract(detection)
+        if not head_points:
+            return []
+            
+        world_detections = []
+        
+        if is_calibrated:
+            import numpy as np
+            from . import calibration
+            
+            # Prepare pixel coordinates for projection
+            px_pts = np.array([[pt.x, pt.y] for pt in head_points], dtype=np.float32)
+            world_pts = calibration.px_to_world(px_pts)
+            
+            for i, pt in enumerate(head_points):
+                wx, wy = world_pts[i]
+                world_detections.append(WorldDetection(head=pt, wx=float(wx), wy=float(wy)))
+        else:
+            for pt in head_points:
+                world_detections.append(WorldDetection(head=pt, wx=0.0, wy=0.0))
+                
+        return world_detections
+
     # ------------------------------------------------------------------
     # Static utility
     # ------------------------------------------------------------------
 
     @staticmethod
-    def compute_foot_point(box: np.ndarray) -> tuple[float, float, float]:
+    def compute_head_point(box: np.ndarray) -> tuple[float, float, float]:
         """Compute the head point for a single bounding box.
 
         Parameters
@@ -160,8 +187,9 @@ class HeadLocalizer:
         tuple[float, float, float]
             ``(head_x, head_y, bbox_height)``
         """
+        x1, y1, x2, y2 = box[0], box[1], box[2], box[3]
         head_x = float((x1 + x2) / 2.0)
-        head_y = float((y1 + y2) / 2.0)
+        head_y = float(y1)  # Top of bounding box
         bbox_height = float(y2 - y1)
         return head_x, head_y, bbox_height
 
@@ -209,5 +237,5 @@ if __name__ == "__main__":
     print(f"After ROI filter: {len(filtered)} / {det.count} points kept")
 
     # Static helper
-    fx, fy, bh = HeadLocalizer.compute_foot_point(np.array([100, 200, 150, 400]))
-    print(f"Static helper: foot=({fx:.1f}, {fy:.1f}), h={bh:.1f}")
+    fx, fy, bh = HeadLocalizer.compute_head_point(np.array([100, 200, 150, 400]))
+    print(f"Static helper: head=({fx:.1f}, {fy:.1f}), h={bh:.1f}")

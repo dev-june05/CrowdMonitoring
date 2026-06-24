@@ -8,6 +8,7 @@ velocity arrows, stats panel, anomaly banners, and keyboard legend.
 import cv2
 import numpy as np
 import time
+from typing import Any
 from src import HeadPoint, CongestionAlert, FlowVector, FlowMetrics, PipelineConfig
 
 
@@ -59,6 +60,9 @@ class Visualizer:
         fps: float = 0.0,
         person_count: int = 0,
         roi_mode: str = "manual",
+        footprint: Any | None = None,
+        risk_level: str = "",
+        is_alerting: bool = False,
     ) -> np.ndarray:
         """Render all enabled overlays onto *frame*.
 
@@ -98,21 +102,40 @@ class Visualizer:
         if self.show_grid and density_matrix is not None and roi_polygon is not None:
             self._draw_grid(display, roi_polygon, density_matrix.shape)
 
-        # 4. Foot-point markers
+        # 4. Crowd Cluster Boundaries (Alpha Shapes)
+        if footprint and footprint.cluster_boundaries_px:
+            for boundary in footprint.cluster_boundaries_px:
+                pts = boundary.reshape((-1, 1, 2))
+                # Draw semi-transparent fill
+                overlay = display.copy()
+                cv2.fillPoly(overlay, [pts], (255, 0, 150))
+                cv2.addWeighted(overlay, 0.2, display, 0.8, 0, display)
+                # Draw outline
+                cv2.polylines(display, [pts], isClosed=True, color=(255, 0, 200), thickness=2)
+
+        # 5. Foot-point markers
         if self.show_head_points and head_points:
             self._draw_head_points(display, head_points)
 
-        # 5. Congestion alert rectangles (always shown when present)
+        # 6. Congestion alert rectangles (always shown when present)
         if congestion_alerts:
             self._draw_congestion(display, congestion_alerts)
 
-        # 6. Velocity arrows
+        # 7. Velocity arrows
         if self.show_velocity and flow_vectors:
             self._draw_velocity(display, flow_vectors)
 
-        # 7. Stats panel (top-left)
+        # 8. Stats panel (top-left)
         if self.show_stats:
-            self._draw_stats(display, fps, person_count, flow_metrics, roi_mode)
+            self._draw_stats(display, fps, person_count, flow_metrics, roi_mode, footprint, risk_level)
+
+        # 9. Alert Screen Flash
+        if is_alerting:
+            overlay = display.copy()
+            cv2.rectangle(overlay, (0, 0), (display.shape[1], display.shape[0]), (0, 0, 255), -1)
+            cv2.addWeighted(overlay, 0.2, display, 0.8, 0, display)
+            cv2.putText(display, "SUSTAINED RISK ALERT!", (display.shape[1]//2 - 200, 50),
+                        cv2.FONT_HERSHEY_DUPLEX, 1.0, (0, 0, 255), 2)
 
         # 8. Anomaly banners (top-right, max 3)
         if anomalies:
@@ -303,6 +326,8 @@ class Visualizer:
         count: int,
         flow_metrics: FlowMetrics | None,
         roi_mode: str,
+        footprint: Any | None,
+        risk_level: str,
     ) -> None:
         """Render a semi-transparent statistics panel in the top-left corner."""
         # Semi-transparent black background
@@ -326,6 +351,22 @@ class Visualizer:
             font, 0.5, (255, 200, 100), 1,
         )
         y_pos += line_h
+
+        if footprint and footprint.total_area_m2 > 0:
+            cv2.putText(
+                frame, f"Density: {footprint.physical_density:.2f} p/m2",
+                (20, y_pos), font, 0.6, (255, 200, 255), 2
+            )
+            y_pos += line_h
+            
+        if risk_level:
+            from src import context_risk
+            color = context_risk.get_risk_color_bgr(risk_level)
+            cv2.putText(
+                frame, f"Risk: {risk_level}",
+                (20, y_pos), font, 0.6, color, 2
+            )
+            y_pos += line_h
 
         if flow_metrics and flow_metrics.num_tracked > 0:
             cv2.putText(
